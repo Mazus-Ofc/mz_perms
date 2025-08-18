@@ -58,6 +58,3 @@ end
 ## Integração com Job/Gang (opcional)
 Este sistema **não** altera `job`/`gang` do QBCore. É complementar. Você pode, por exemplo,
 usar `HasGroup` para liberar acesso a áreas, lojinhas, comandos, etc.
-
----
-Feito com ❤ para a base do Mazus.
