@@ -213,3 +213,23 @@ PermsCore = {
     Refresh = _refreshPlayerMeta,
     GetIdentity = _getPlayerIdentity,
 }
+
+
+AddEventHandler('QBCore:Server:OnPlayerLoaded', function(Player)
+    if Player and Player.PlayerData and Player.PlayerData.source then
+        _refreshPlayerMeta(Player.PlayerData.source)
+    end
+end)
+
+-- compat caso sua base use outro nome de evento
+RegisterNetEvent('QBCore:Server:PlayerLoaded', function()
+    local src = source
+    _refreshPlayerMeta(src)
+end)
+
+AddEventHandler('onResourceStart', function(res)
+    if res ~= GetCurrentResourceName() then return end
+    for _, src in ipairs(GetPlayers()) do
+        _refreshPlayerMeta(tonumber(src))
+    end
+end)
