@@ -5,6 +5,18 @@ local function _isManager(src)
         if QBCore.Functions.HasPermission(src, g) then
             return true
         end
+
+        if IsPlayerAceAllowed(src, g) then
+            return true
+        end
+
+        if IsPlayerAceAllowed(src, 'group.' .. g) then
+            return true
+        end
+
+        if IsPlayerAceAllowed(src, 'qbcore.' .. g) then
+            return true
+        end
     end
     return false
 end
