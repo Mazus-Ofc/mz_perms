@@ -233,3 +233,133 @@ AddEventHandler('onResourceStart', function(res)
         _refreshPlayerMeta(tonumber(src))
     end
 end)
+
+
+local function _getMetaPerms(src)
+    local player = QBCore.Functions.GetPlayer(src)
+    if not player then return {} end
+    return (player.PlayerData.metadata and player.PlayerData.metadata.perms) or {}
+end
+
+local function _getHighestStaffLevelFromSet(staffSet)
+    local bestName, bestLevel = nil, 0
+    for name, enabled in pairs(staffSet or {}) do
+        if enabled then
+            local lvl = tonumber(Config.StaffHierarchy[name] or 0) or 0
+            if lvl > bestLevel then
+                bestLevel = lvl
+                bestName = name
+            end
+        end
+    end
+    return bestName, bestLevel
+end
+
+local function _getActorManageLevel(src)
+    if _isManager(src) then
+        local maxLvl = 0
+        for _, lvl in pairs(Config.StaffHierarchy or {}) do
+            lvl = tonumber(lvl or 0) or 0
+            if lvl > maxLvl then maxLvl = lvl end
+        end
+        return maxLvl, 'manager'
+    end
+    local meta = _getMetaPerms(src)
+    local name, lvl = _getHighestStaffLevelFromSet(meta.staff or {})
+    return lvl or 0, name
+end
+
+local function _getAssignableStaffRoles(src)
+    local actorLevel = _getActorManageLevel(src)
+    local roles = {}
+    for _, role in ipairs(Config.AllowedStaffNames or {}) do
+        local lvl = tonumber(Config.StaffHierarchy[role] or 0) or 0
+        if actorLevel > 0 and lvl <= actorLevel then
+            roles[#roles + 1] = { name = role, level = lvl }
+        end
+    end
+    table.sort(roles, function(a, b)
+        if a.level == b.level then return a.name < b.name end
+        return a.level < b.level
+    end)
+    return roles, actorLevel
+end
+
+exports('GetStaffConfig', function()
+    return {
+        table = Config.Table,
+        allowed = Config.AllowedStaffNames or {},
+        hierarchy = Config.StaffHierarchy or {}
+    }
+end)
+
+exports('GetAssignableStaffRoles', function(src)
+    local roles, actorLevel = _getAssignableStaffRoles(src)
+    return { roles = roles, actorLevel = actorLevel }
+end)
+
+exports('GetPlayerStaffRoles', function(target)
+    local ident = _getPlayerIdentity(target)
+    if not ident.citizenid then
+        return { ok = false, error = 'Alvo não encontrado.' }
+    end
+    local rows = MySQL.query.await('SELECT group_name FROM '..Config.Table..' WHERE citizenid = ? AND type = "staff" ORDER BY group_name ASC', { ident.citizenid }) or {}
+    local roles, owned = {}, {}
+    for _, row in ipairs(rows) do
+        local role = tostring(row.group_name or ''):lower()
+        if role ~= '' then
+            roles[#roles + 1] = role
+            owned[role] = true
+        end
+    end
+    local highestRole, highestLevel = _getHighestStaffLevelFromSet(owned)
+    return {
+        ok = true,
+        identity = ident,
+        roles = roles,
+        highestRole = highestRole,
+        highestLevel = highestLevel or 0
+    }
+end)
+
+exports('ManageStaffRole', function(actorSrc, target, action, role)
+    action = tostring(action or ''):lower()
+    role = tostring(role or ''):lower()
+    if not _allowedName('staff', role) then
+        return false, 'Cargo inválido.'
+    end
+
+    local assignable, actorLevel = _getAssignableStaffRoles(actorSrc)
+    local allowed = false
+    for _, item in ipairs(assignable or {}) do
+        if item.name == role then
+            allowed = true
+            break
+        end
+    end
+    if not allowed then
+        return false, 'Você não pode definir esse cargo.'
+    end
+
+    local ident = _getPlayerIdentity(target)
+    if not ident.citizenid then
+        return false, 'Jogador/alvo não encontrado.'
+    end
+
+    local targetInfo = exports[GetCurrentResourceName()]:GetPlayerStaffRoles(target)
+    if targetInfo and targetInfo.ok and tonumber(targetInfo.highestLevel or 0) > actorLevel then
+        return false, 'Você não pode alterar alguém acima do seu nível.'
+    end
+
+    if action == 'add' then
+        local ok, err = _addGroup(actorSrc, target, 'staff', role, nil)
+        if ok and ident.player then _refreshPlayerMeta(ident.player.PlayerData.source) end
+        return ok, err
+    elseif action == 'remove' then
+        local ok = _removeGroup(actorSrc, target, 'staff', role)
+        if ok and ident.player then _refreshPlayerMeta(ident.player.PlayerData.source) end
+        return ok, ok and nil or 'Nada removido.'
+    else
+        return false, 'Ação inválida.'
+    end
+end)
